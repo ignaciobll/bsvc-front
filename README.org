@@ -1,0 +1,44 @@
+* Yep, for real. Better BSVC
+
+** ROADMAP
+
+Para septiembre la beta
+
+
+* Cómo ejecutar esto
+
+** Dependencias
+
+Para las dependencias de Python (3)
+
+#+BEGIN_SRC bash
+
+sudo pip3 install -r requirements.txt
+
+#+END_SRC
+
+
+Para el bsvc... Bueno, yo uso la versión 2.1 que está en GitHub: https://github.com/BSVC/bsvc
+
+
+Y para elm... Suerte con ~npm/yarn/node world~
+
+** Ejecutar
+
+Por un lado
+
+#+BEGIN_SRC bash
+
+python3 bsvc_server.py
+
+#+END_SRC
+
+Y por el otro:
+
+#+BEGIN_SRC bash
+
+elm-reactor
+
+#+END_SRC
+
+No me complico de momento.
