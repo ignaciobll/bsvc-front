@@ -2,7 +2,8 @@ import uifr
 import websockets
 import asyncio
 import json
-
+import subprocess
+from datetime import datetime
 
 regvalue = 1
 
@@ -18,11 +19,40 @@ def list_registers():
 
 async def repl(websocket, path):
     command = await websocket.recv()
-    print("[RECV]\t{}".format(command))
+    print("[RECV]\t{:.30}...".format(command))
     if command == "registers":
         await registers(websocket, path)
     elif "memory" in command:
         await list_memory(websocket, path, command)
+    # elif command == "loadprogram":
+    #     await load_program(websocket, path, command)
+    elif "step" in command:
+        await step(websocket, path, command)
+    elif "filecontent" == command[:11]:
+        await load_file(websocket, path, command)
+
+
+async def load_file(websocket, path, command):
+    pos = len("filecontent ")
+    content = command[pos:]
+    file_name = str(datetime.utcnow()).replace(' ', '_').replace('.', '_').replace(':', '-')
+    with open('./upload/' + file_name, 'w') as s:
+        s.write(content)
+    subprocess.run(args=["68kasm",  "{}".format(file_name)], cwd='./upload')
+    await load_program(websocket, path, './upload/' + file_name + '.h68')
+
+
+async def step(websocket, path, command):
+    n_steps = int(command.split(" ")[1])
+    uifr.step(n_steps)
+    await registers(websocket, path)
+
+
+async def load_program(websocket, path, command):
+    program = command
+    uifr.load_program(program)
+    uifr.reset()
+    await registers(websocket, path)
 
 
 async def list_memory(websocket, path, command):
@@ -36,10 +66,7 @@ async def list_memory(websocket, path, command):
 
 
 async def registers(websocket, path):
-    global regvalue
-    regvalue += 1
     rs = list_registers()
-    uifr.set_register("D1", regvalue)
     print('\t[RESP]\t{:.30}...'.format(json.dumps(rs)))
     await websocket.send(json.dumps(rs))
 

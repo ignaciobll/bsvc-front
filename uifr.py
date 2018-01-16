@@ -108,7 +108,7 @@ def list_maximum_address(addrspace):
 
 
 def list_memory(addrspace=0, addr=0, lenght=80, words_per_line=16):
-    q = "ListMemory {} {} {} {}".format(addrspace, addr, hex(lenght), hex(words_per_line))
+    q = "ListMemory {} {} {} {}".format(addrspace, hex(addr), hex(lenght), hex(words_per_line))
     sim_write(q)
     return sim_read()
 

@@ -1,3 +1,5 @@
+module Main exposing (main)
+
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -6,6 +8,11 @@ import Json.Decode as JD
 import WebSocket
 import Util exposing (hexStrToInt, toBinStr)
 import Char exposing (fromCode)
+import Task
+-- Native Code
+import FileReader exposing (NativeFile)
+import FileReader.FileDrop as DZ
+
 
 main =
     Html.program
@@ -30,27 +37,41 @@ type alias Memory =
     , memoryStart : Int
     }
 
+type alias FileManger =
+    { filename : Maybe NativeFile
+    , content : String
+    , dragHovering : Int
+    }
+
 type alias Model =
     { registers : List Register
     , memory : Memory
+    , file : FileManger
     }
 
 
 init : (Model, Cmd Msg)
 init =
-    ( Model [] (Memory [] 0)
+    ( Model [] (Memory [] 0) (FileManger Nothing "" 0)
     , Cmd.none)
 
 
 -- Update
-        
+
 type Msg
     = Registers (List Register)
     | MemoryUpdate MemoryDump
     | MemoryStart Int
     | WebSocketMessage String
     | Refresh String
+    | LoadProgram
+    | Step Int
     | Log String
+    | OnDragEnter Int -- FileMsg
+    | OnDrop (List NativeFile)
+    | StartUpload
+    | OnFileContent (Result FileReader.Error String)
+    | NoOp
 
 
 update : Msg -> Model -> (Model, Cmd Msg)
@@ -60,6 +81,10 @@ update msg model =
             (model, WebSocket.send wsEndpoint obj)
         Registers lreg ->
             ({ model | registers = lreg }, Cmd.none)
+        LoadProgram ->
+            (model, WebSocket.send wsEndpoint "loadprogram")
+        Step n ->
+            (model, WebSocket.send wsEndpoint ("step " ++ (toString n)))
         MemoryStart pos ->
             case (model.memory.memoryStart + pos) < 0 of
                 True ->
@@ -94,6 +119,58 @@ update msg model =
                     (model, Cmd.none)
         Log s ->
             (model, Cmd.none)
+
+        OnDragEnter inc ->
+            let
+                oldFile = model.file
+                newFile = { oldFile | dragHovering = oldFile.dragHovering + inc }
+            in
+            ( { model | file = newFile }, Cmd.none )
+
+        OnDrop file ->
+            case file of
+                [ f ] ->
+                    let
+                        oldFile = model.file
+                        newFile = { oldFile | filename = Just f, dragHovering = 0 }
+                    in
+                        ( { model | file = newFile }, getFileContents f )
+                _ ->
+                    let
+                        oldFile = model.file
+                        newFile = { oldFile | dragHovering = 0 }
+                    in
+                        ( { model | file = newFile }, Cmd.none )
+
+        StartUpload ->
+            (model, model.file.content |> sendFileToServer)
+
+        OnFileContent res ->
+            case res of
+                Ok content ->
+                    let
+                        oldFile = model.file
+                        newFile = { oldFile | content = content }
+                    in
+                        ( { model | file = newFile }, Cmd.none )
+                Err err ->
+                    Debug.crash (toString err)
+
+        _ ->
+            ( model, Cmd.none )
+
+getFileContents : NativeFile -> Cmd Msg
+getFileContents nf =
+    FileReader.readAsTextFile nf.blob
+        |> Task.attempt OnFileContent
+
+sendFileToServer : String -> Cmd Msg
+sendFileToServer raw =
+    let
+        content = "filecontent " ++ raw
+    in
+    WebSocket.send wsEndpoint content
+
 
 setMemoryDump : MemoryDump -> Memory -> Memory
 setMemoryDump mdump mem =
@@ -142,6 +219,7 @@ view model =
         , button [onClick (Refresh ("memory " ++ (toString model.memory.memoryStart))) ]
             [text "Refresh memory dump"]
         , viewMemory model.memory
+        , viewProgram model
         ]
       
 viewRegisters : List Register -> Html Msg
@@ -149,7 +227,8 @@ viewRegisters lr =
     table []
         ((tr [] [ th [] [ span [] [ text "Register" ] ]
                 , th [] [ span [] [ text "Value"    ] ]
-                , th [] [ span [] [ text "Decimal"      ] ]
+                , th [] [ span [] [ text "Decimal"  ] ]
+                , th [] [ span [] [ text "Char"  ] ]
                 ]
          ) :: (List.map viewRegister lr))
         
@@ -182,7 +261,7 @@ viewMemoryRow n lm =
         hexMemory = String.join " " lm -- Future: Maybe more td, not a string line
         asciiMemory = List.map hexStrToInt lm
                     |> List.map (\c -> case c of
-                                           0 -> 46  -- A dot char (.)
+                                           0 -> 46 -- A dot char (.)
                                            _ -> c)
                     |> List.map (String.fromChar << fromCode)
                     |> String.join ""
@@ -193,3 +272,67 @@ viewMemoryRow n lm =
        , td [] [ span [ class "MemoryAscii"] [ text asciiMemory  ] ] 
        ]
         
+
+viewProgram : Model -> Html Msg
+viewProgram model =
+    div []
+        -- [ button [ onClick (LoadProgram) ] [ text ("LoadProgram") ]
+        [ button [ onClick (Step 1) ] [ text ("Step") ]
+        , viewDragArea model
+        ]
+
+
+viewDragArea : Model -> Html Msg
+viewDragArea model =
+    let
+        dzAttrs_ =
+            DZ.dzAttrs (OnDragEnter 1) (OnDragEnter -1) NoOp OnDrop
+
+        dzClass =
+            if model.file.dragHovering > 0 then
+                class "drop-zone active" :: dzAttrs_
+            else
+                class "drop-zone" :: dzAttrs_
+    in
+        div [ class "panel" ] <|
+            [ p [] [ text "Drag n Drop file below or use the file dialog to load file" ]
+            , div dzClass
+                [ input
+                      [ type_ "file"
+                      , FileReader.onFileChange OnDrop
+                      , multiple False
+                      ]
+                      []
+                ]
+            , case model.file.filename of
+                  Just nf ->
+                      div []
+                          [ span [] [ text nf.name ]
+                          , button [ onClick StartUpload ] [ text "Upload" ]
+                          , div [] [ code
+                                         [ style [ ("white-space", "pre-wrap") ]
+                                         ]
+                                         [ viewCodeBlock model.file.content
+                                         ]
+                                   ]
+                          ]
+                  Nothing ->
+                      text ""
+            ]
+
+viewCodeBlock : String -> Html Msg
+viewCodeBlock cblock =
+    let
+        lineN = List.indexedMap (,) (String.lines cblock)
+    in
+        table []
+            (List.map viewCodeLine lineN)
+
+
+viewCodeLine : (Int, String) -> Html Msg
+viewCodeLine (nline, line) =
+    tr []
+        [ td [] [ span [ class "codeLine"] [ text (toString nline)  ] ]
+        , td [] [ span [ class "codeLine"] [ text line  ] ]
+        ]
+
