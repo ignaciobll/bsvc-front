@@ -1,5 +1,8 @@
 module Main exposing (main)
 
+-- Components
+
+-- Html Core Elm Stuff
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -12,6 +15,20 @@ import Task
 -- Native Code
 import FileReader exposing (NativeFile)
 import FileReader.FileDrop as DZ
+-- Style imports
+import Material
+import Material.Scheme
+import Material.Button as Button
+import Material.Options as Options exposing (css)
+import Material.Layout as Layout
+import Material.Table as Table
+import Material.Grid as Grid
+import Material.List as Lists
+import Material.Textfield as Textfield
+import Material.Card as Card
+import Material.Elevation as Elevation
+-- Custom CSS
+import Style as S
 
 
 main =
@@ -47,12 +64,13 @@ type alias Model =
     { registers : List Register
     , memory : Memory
     , file : FileManger
+    , mdl : Material.Model
     }
 
 
 init : (Model, Cmd Msg)
 init =
-    ( Model [] (Memory [] 0) (FileManger Nothing "" 0)
+    ( Model [] (Memory [] 0) (FileManger Nothing "" 0) (Material.model)
     , Cmd.none)
 
 
@@ -72,6 +90,7 @@ type Msg
     | StartUpload
     | OnFileContent (Result FileReader.Error String)
     | NoOp
+    | Mdl (Material.Msg Msg) -- Material Design
 
 
 update : Msg -> Model -> (Model, Cmd Msg)
@@ -156,6 +175,9 @@ update msg model =
                 Err err ->
                     Debug.crash (toString err)
 
+        Mdl msg_ ->
+            Material.update Mdl msg_ model
+
         _ ->
             ( model, Cmd.none )
 
@@ -213,25 +235,77 @@ subscriptions model =
 
 view : Model -> Html Msg
 view model =
-    div []
-        [ button [onClick (Refresh "registers")] [text "Refresh registers"]
-        , viewRegisters model.registers
-        , button [onClick (Refresh ("memory " ++ (toString model.memory.memoryStart))) ]
-            [text "Refresh memory dump"]
-        , viewMemory model.memory
-        , viewProgram model
+    Material.Scheme.top <|
+        Layout.render Mdl
+            model.mdl
+                [ Layout.fixedHeader
+                ]
+            { header = [ span [ style [ ( "padding", "2rem" ) ] ] [ text "BSVC - 68K" ] ]
+            , drawer = []
+            , tabs = ( [], [] )
+            , main = [ view_ model ]
+            }
+
+view_ : Model -> Html Msg
+view_ model =
+    Grid.grid []
+        [ Grid.cell [ Grid.size Grid.All 3 ] [ viewRegisters model.registers ]
+        , Grid.cell [ Grid.size Grid.All 4 ] [ viewProgram model ]
+        , Grid.cell [ Grid.size Grid.All 5 ] [ viewMemory model ]
         ]
+
+            
+-- view_ : Model -> Html Msg
+-- view_ model =
+--     Options.div []
+--         [ viewRegisters model.registers
+--         -- , Button.render Mdl [ 1 ] model.mdl
+--         --     [ Button.raised
+--         --     , Button.colored
+--         --     , Options.onClick (Refresh ("memory " ++ (toString model.memory.memoryStart)))
+--         --     ]
+--         --     [ text "Refresh memory" ]
+--         -- , button [onClick (Refresh ("memory " ++ (toString model.memory.memoryStart))) ]
+--         --     [text "Refresh memory dump"]
+--         , viewMemory model.memory
+--         , viewProgram model
+--         ]
+
       
+-- viewRegisters : List Register -> Html Msg
+-- viewRegisters lr =
+--     table []
+--         ((tr [] [ th [] [ span [] [ text "Register" ] ]
+--                 , th [] [ span [] [ text "Value"    ] ]
+--                 , th [] [ span [] [ text "Decimal"  ] ]
+--                 , th [] [ span [] [ text "Char"  ] ]
+--                 ]
+--          ) :: (List.map viewRegister lr))
+
+
 viewRegisters : List Register -> Html Msg
 viewRegisters lr =
-    table []
-        ((tr [] [ th [] [ span [] [ text "Register" ] ]
-                , th [] [ span [] [ text "Value"    ] ]
-                , th [] [ span [] [ text "Decimal"  ] ]
-                , th [] [ span [] [ text "Char"  ] ]
-                ]
-         ) :: (List.map viewRegister lr))
-        
+    Table.table []
+        [ Table.thead []
+              [ Table.tr []
+                    [ Table.th [] [ text "Register" ]
+                    , Table.th [] [ text "Value" ]
+                    , Table.th [] [ text "Decimal" ]
+                    , Table.th [] [ text "Char" ]
+                    ]
+              ]
+        , Table.tbody []
+            (lr |> List.map (\r ->
+               Table.tr []
+                   [ Table.td [] [ text r.name ]
+                   , Table.td [ Table.numeric ] [ text r.value ]
+                   , Table.td [ Table.numeric ] [ text ((toString << hexStrToInt) r.value) ]
+                   , Table.td [] [ text ((toString << fromCode << hexStrToInt) r.value) ]
+                   ]
+                            )
+            )
+        ]
+
 viewRegister : Register -> Html Msg
 viewRegister r =
     tr []
@@ -242,9 +316,20 @@ viewRegister r =
         ]        
 
 
-viewMemory : Memory -> Html Msg
-viewMemory memory =
+viewMemory : Model -> Html Msg
+viewMemory model =
+    Card.view
+        [ Options.css "width" "650px"
+        , Elevation.e2
+        ]
+        [ Card.text [] [ viewMemoryDump model ]
+        ]
+
+        
+viewMemoryDump : Model -> Html Msg
+viewMemoryDump model =
     let
+        memory = model.memory
         lineN = List.indexedMap (\x memrow -> memory.memoryStart + x * 16) memory.memoryDump -- 16: length of memory row
     in
         div []
@@ -253,10 +338,19 @@ viewMemory memory =
                   , span [class "MemoryStart" ] [text (toString memory.memoryStart) ]
                   , button [onClick (MemoryStart  16)] [ text ">>" ]
                   ]
-            , table [] (List.map2 viewMemoryRow lineN memory.memoryDump) ]
+            , table []
+                ((tr []
+                      [ th [] [ text "Addr." ]
+                      , th [] [ text "Hexdump" ]
+                      , th [] [ text "Ascii" ]
+                      ])
+                :: (List.map3 viewMemoryRow (List.repeat (List.length lineN) model) lineN memory.memoryDump))
+                
+            ]
 
-viewMemoryRow : Int -> List MemoryAddr -> Html Msg
-viewMemoryRow n lm =
+
+viewMemoryRow : Model -> Int -> List MemoryAddr -> Html Msg
+viewMemoryRow model n lm =
     let
         hexMemory = String.join " " lm -- Future: Maybe more td, not a string line
         asciiMemory = List.map hexStrToInt lm
@@ -266,19 +360,20 @@ viewMemoryRow n lm =
                     |> List.map (String.fromChar << fromCode)
                     |> String.join ""
     in
-    tr []
-       [ td [] [ span [ class "MemoryLine" ] [ text (toString n) ] ]
-       , td [] [ span [ class "MemoryHex"  ] [ text hexMemory    ] ]
-       , td [] [ span [ class "MemoryAscii"] [ text asciiMemory  ] ] 
+    tr [ ]
+       [ td [ style (S.memory ++ S.line_number) ] [ text (toString n)]
+       , td [ style (S.memory) ] [ text hexMemory   ]
+       , td [ style (S.memory) ] [ text asciiMemory ]
        ]
-        
+
 
 viewProgram : Model -> Html Msg
 viewProgram model =
-    div []
-        -- [ button [ onClick (LoadProgram) ] [ text ("LoadProgram") ]
-        [ button [ onClick (Step 1) ] [ text ("Step") ]
-        , viewDragArea model
+    Grid.grid []
+        [ Grid.cell []
+              [ button [ onClick (Step 1) ] [ text ("Step") ]
+              , viewDragArea model
+              ]
         ]
 
 
@@ -294,7 +389,7 @@ viewDragArea model =
             else
                 class "drop-zone" :: dzAttrs_
     in
-        div [ class "panel" ] <|
+        div [ class "panel" ]
             [ p [] [ text "Drag n Drop file below or use the file dialog to load file" ]
             , div dzClass
                 [ input

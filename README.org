@@ -23,9 +23,35 @@ Para el bsvc... Bueno, yo uso la versión 2.1 que está en GitHub: https://githu
 
 Y para elm... Suerte con ~npm/yarn/node world~
 
+Además, de cara a poder instalar todas las dependencias hará falta
+tener instalado ~elm-github-install~. Que lo podéis encontrar en
+https://github.com/gdotdesign/elm-github-install
+
+Los pasos para instalarlo son:
+
+#+BEGIN_SRC bash
+
+npm install elm-github-install -g
+
+#+END_SRC
+
+Y en caso de que es falle (que es bastante probable), si salta el
+error ~EACCESS: permission denied~, pues escribis el siguiente
+comando:
+
+#+BEGIN_SRC bash
+
+sudo npm i -g elm-github-install --unsafe-perm=true --allow-root
+
+#+END_SRC
+
+Lo único que nos quedaría es irnos a la carpeta ~ui~ de este proyecto
+y hacer ~elm-install~. En unos segundos descargará y configurará todo
+lo necesario en lo relativo a dependencias de Elm.
+
 ** Ejecutar
 
-Por un lado
+Por un lado:
 
 #+BEGIN_SRC bash
 
@@ -33,7 +59,7 @@ python3 bsvc_server.py
 
 #+END_SRC
 
-Y por el otro:
+Y por el otro, en la carpeta ~ui~:
 
 #+BEGIN_SRC bash
 
